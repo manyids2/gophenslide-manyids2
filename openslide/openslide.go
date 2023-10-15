@@ -8,14 +8,18 @@ package openslide
 // #include <openslide.h>
 // char * str_at(char ** p, int i) { return p[i]; }
 import "C"
+
 import (
 	"errors"
+	"log"
 	"unsafe"
 )
 
 // Slide Slides
 type Slide struct {
-	ptr *C.openslide_t
+	ptr           *C.openslide_t
+	Width, Height int64
+	LevelCount    int32
 }
 
 // Open Don't forget to defer Close.
@@ -25,19 +29,21 @@ func Open(filename string) (Slide, error) {
 	defer C.free(unsafe.Pointer(cFilename))
 	slideData := C.openslide_open(cFilename)
 	if slideData == nil {
-		return Slide{nil}, errors.New("File " + filename + " unrecognized.")
+		return Slide{ptr: nil}, errors.New("File " + filename + " unrecognized.")
 	}
-	return Slide{slideData}, nil
+	// Initialize pointer
+	slide := Slide{ptr: slideData}
+
+	// Read usually necessary metadata
+	slide.Width, slide.Height = slide.LargestLevelDimensions()
+	slide.LevelCount = int32(C.openslide_get_level_count(slide.ptr))
+
+	return slide, nil
 }
 
 // Close Closes a slide
 func (slide Slide) Close() {
 	C.openslide_close(slide.ptr)
-}
-
-// LevelCount Get the number of levels in the whole slide image.
-func (slide Slide) LevelCount() int32 {
-	return int32(C.openslide_get_level_count(slide.ptr))
 }
 
 // LargestLevelDimensions Get the dimensions of level 0, the largest level (aka get_level0_dimensions)
@@ -99,7 +105,6 @@ func (slide Slide) PropertyNames() []string {
 
 // PropertyValue Get the value for a specific property
 func (slide Slide) PropertyValue(propName string) string {
-
 	cPropName := C.CString(propName)
 	defer C.free(unsafe.Pointer(cPropName))
 	cPropValue := C.openslide_get_property_value(slide.ptr, cPropName)
@@ -113,7 +118,7 @@ func Version() string {
 }
 
 // PropBackgroundColor The name of the property containing a slide's background color, if any.
-//It is represented as an RGB hex triplet.
+// It is represented as an RGB hex triplet.
 const PropBackgroundColor = "openslide.background-color"
 
 // PropBoundsHeight The name of the property containing the height of the rectangle bounding the non-empty region of the slide, if available.
@@ -136,3 +141,12 @@ const PropMPPY = "openslide.mpp-y"
 
 // PropObjectivePower The name of the property containing a slide's objective power, if known.
 const PropObjectivePower = "openslide.objective-power"
+
+// Thumbnail
+
+// PropertyValue Get the value for a specific property
+func (slide Slide) AssociatedImageNames() []string {
+	x := C.openslide_get_associated_image_names(slide.ptr)
+	log.Println(x)
+	return []string{}
+}
