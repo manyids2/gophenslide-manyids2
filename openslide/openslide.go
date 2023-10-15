@@ -7,12 +7,22 @@ package openslide
 // #include <stdint.h>
 // #include <openslide.h>
 // char * str_at(char ** p, int i) { return p[i]; }
+// int length_associated_images(openslide_t *osr) {
+// 	int count = 0;
+//   const char *const *associated_image_names = openslide_get_associated_image_names(osr);
+//   while (*associated_image_names) {
+//   	count += 1;
+//     associated_image_names++;
+//   };
+//   return count;
+// }
 import "C"
 
 import (
 	"errors"
-	"log"
 	"unsafe"
+
+	"golang.org/x/exp/slices"
 )
 
 // Slide Slides
@@ -144,9 +154,45 @@ const PropObjectivePower = "openslide.objective-power"
 
 // Thumbnail
 
-// PropertyValue Get the value for a specific property
+// Associated images - label, macro, thumbnail
 func (slide Slide) AssociatedImageNames() []string {
-	x := C.openslide_get_associated_image_names(slide.ptr)
-	log.Println(x)
-	return []string{}
+	var list **C.char
+	list = C.openslide_get_associated_image_names(slide.ptr)
+	length := C.length_associated_images(slide.ptr)
+	slice := make([]string, length)
+	for _, v := range unsafe.Slice(list, length) {
+		name := C.GoString(v)
+		if len(name) > 0 {
+			slice = append(slice, C.GoString(v))
+		}
+	}
+	return slice
+}
+
+func (slide Slide) GetAssociatedImageSize(name string) (int64, int64, error) {
+	if !slices.Contains(slide.AssociatedImageNames(), name) {
+		return 0, 0, errors.New("No associated image: " + name)
+	}
+	var w, h C.int64_t
+	cName := C.CString(name)
+	C.openslide_get_associated_image_dimensions(slide.ptr, cName, &w, &h)
+	return int64(w), int64(h), nil
+}
+
+func (slide Slide) GetAssociatedImage(name string) ([]byte, error) {
+	if !slices.Contains(slide.AssociatedImageNames(), name) {
+		return nil, errors.New("No associated image: " + name)
+	}
+
+	w, h, _ := slide.GetAssociatedImageSize(name)
+	len := w * h * 4
+
+	cName := C.CString(name)
+	rawPtr := C.malloc(C.size_t(len))
+	defer C.free(rawPtr)
+	C.openslide_read_associated_image(slide.ptr, cName, (*C.uint32_t)(rawPtr))
+	if txt := C.openslide_get_error(slide.ptr); txt != nil {
+		return nil, errors.New(C.GoString(txt))
+	}
+	return C.GoBytes(rawPtr, C.int(len)), nil
 }

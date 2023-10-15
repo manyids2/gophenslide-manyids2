@@ -17,3 +17,5 @@
 # Binaries
 bin
 openslide/testdata
+gophenslide-manyids2
+go.sum
